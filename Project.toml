@@ -10,7 +10,7 @@ DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 
 [compat]
 CSV = "0.10.15"
-CategoricalArrays = ""0.10, 1""
+CategoricalArrays = "0.10, 1"
 DataFrames = "1.8.0"
 julia = "1.11 - 1.12"
 
