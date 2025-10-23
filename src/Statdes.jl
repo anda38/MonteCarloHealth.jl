@@ -1,3 +1,0 @@
-module Statdes
-#gngngn
-end

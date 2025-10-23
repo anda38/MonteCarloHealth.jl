@@ -1,10 +1,11 @@
 module MonteCarloHealth
 
-using CSV, DataFrames, CategoricalArrays
+using MLJ, DataFrames, Random, Distributed, Statistics
 
 include("preprocess_data.jl")
-using .PreprocessData: load_and_clean_data  
+include("stat_des.jl")
+include("simulation.jl")
 
-export load_and_clean_data
+export train_model, BasicSimulation, ParallelSimulation, simulate
 
 end
