@@ -1,37 +1,35 @@
-using CSV, DataFrames, Statistics
+using CSV, DataFrames
 
 function load_and_clean_data()
-    # Charger le fichier brut
-    chemin = joinpath(@__DIR__, "..", "data", "données.csv")
-    df = CSV.read(chemin, DataFrame)
+    # Load CSV
+    path = joinpath(@__DIR__, "..", "data", "données.csv")
+    df = CSV.read(path, DataFrame; normalizenames=true)
 
-    # Séparer la pression artérielle en deux colonnes numériques
-    df.blood_pressure_systolic = parse.(Int, first.(split.(df.blood_pressure, "/")))
-    df.blood_pressure_diastolic = parse.(Int, last.(split.(df.blood_pressure, "/")))
+    # Split blood pressure
+    parts = split.(df.blood_pressure, "/")
+    df.blood_pressure_systolic  = parse.(Int, getindex.(parts, 1))
+    df.blood_pressure_diastolic = parse.(Int, getindex.(parts, 2))
 
-    # Convertir les colonnes Yes/No en 1/0
-    for col in [:diabetes, :hypertension, :readmitted_30_days]
-        df[!, col] = ifelse.(df[!, col] .== "Yes", 1, 0)
-    end 
+    # Drop unneeded columns
+    select!(df, Not([:patient_id, :blood_pressure]))
 
-    # Encodage one-hot manuel pour la variable "gender"
-    genders = unique(df.gender)
-    for g in genders
+    # Convert Yes/No → 1/0
+    df.diabetes     = ifelse.(df.diabetes .== "Yes", 1, 0)
+    df.hypertension = ifelse.(df.hypertension .== "Yes", 1, 0)
+    df.readmitted_30_days = ifelse.(df.readmitted_30_days .== "Yes", 1, 0)
+
+    # One-hot encode gender
+    for g in unique(df.gender)
         df[!, Symbol("gender_", g)] = ifelse.(df.gender .== g, 1, 0)
     end
-    # Encodage one-hot manuel pour la variable "discharge_destination"
-    discharges = unique(df.discharge_destination)
-    for d in discharges
+    select!(df, Not(:gender))
+
+    # One-hot encode discharge_destination
+    for d in unique(df.discharge_destination)
         df[!, Symbol("discharge_", d)] = ifelse.(df.discharge_destination .== d, 1, 0)
     end
+    select!(df, Not(:discharge_destination))
 
-    # Supprimer les colonnes d’origine catégorielles
-    select!(df, Not([:gender, :discharge_destination]))
-
-    # Sauvegarder le fichier nettoyé
-    cheminpropre = joinpath(@__DIR__, "..", "data", "données_clean.csv")
-    CSV.write(cheminpropre, df)
-    println("✅ Données nettoyées et encodées sauvegardées : $cheminpropre")
-
+    println("✅ Cleaned data: $(nrow(df)) rows × $(ncol(df)) cols")
     return df
 end

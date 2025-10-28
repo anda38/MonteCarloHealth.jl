@@ -1,74 +1,84 @@
-using DataFrames, Statistics, Random, MLJ, Distributed
+using DataFrames, Random, MLJ, Distributed, Statistics
+using Base.Threads
 
-# ----------------------------------------------------------
-# 🧱 Base Simulation Types
-# ----------------------------------------------------------
+# --- add_noise and predict_proba ---
+function add_noise(df::DataFrame, num_cols::Vector{Symbol}, σ::Float64)
+    df_noisy = deepcopy(df)
+    for c in num_cols
+        df_noisy[!, c] .+= σ .* randn(nrow(df))
+    end
+    return df_noisy
+end
 
+function predict_proba(mach::Machine, X::DataFrame)
+    yhat = MLJ.predict(mach, X)
+    if yhat isa AbstractVector{<:UnivariateFinite}
+        pos_class = last(levels(first(yhat)))
+        return [pdf(y, pos_class) for y in yhat]
+    else
+        return Float64.(yhat)
+    end
+end
+
+# ------------------------------------------------------------
+#  Simulation types
+# ------------------------------------------------------------
 abstract type Simulation end
 
 struct BasicSimulation <: Simulation
     model::Machine
     n_iter::Int
+    noise_level::Float64
 end
 
-struct ParallelSimulation <: Simulation
+struct ThreadedSimulation <: Simulation
     model::Machine
     n_iter::Int
+    noise_level::Float64
 end
 
-# ----------------------------------------------------------
-# ⚙️ Distributed Setup
-# ----------------------------------------------------------
-
-if nprocs() == 1
-    addprocs(4)
-end
-
-@everywhere using MLJ, DataFrames, Random
-
-# ----------------------------------------------------------
-# 🧠 Serial Simulation
-# ----------------------------------------------------------
-
-function simulate(sim::BasicSimulation, data::DataFrame)
-    preds = zeros(Float64, nrow(data))
+# ------------------------------------------------------------
+#  Serial simulate
+# ------------------------------------------------------------
+function simulate(sim::BasicSimulation, X::DataFrame)
+    num_cols = Symbol.(names(X)[findall(c -> eltype(X[!, c]) <: Real, names(X))])
+    preds = zeros(nrow(X))
     for _ in 1:sim.n_iter
-        noisy_data = deepcopy(data)
-        noisy_data.age .= noisy_data.age .+ randn(nrow(data)) .* 0.5
-        ŷ = predict_mode(sim.model, noisy_data)
-        preds .+= Float64.(ŷ)
+        X_noisy = add_noise(X, num_cols, sim.noise_level)
+        preds .+= predict_proba(sim.model, X_noisy)
     end
-    preds ./= sim.n_iter
+    return preds ./ sim.n_iter
 end
 
-# ----------------------------------------------------------
-# ⚙️ Parallel Simulation
-# ----------------------------------------------------------
+# ------------------------------------------------------------
+#  Threaded simulate
+# ------------------------------------------------------------
+###############################################################
+#  Threaded Simulation — FINAL SAFE VERSION
+###############################################################
 
-function simulate(sim::ParallelSimulation, data::DataFrame)
-    n = nrow(data)
-    results = pmap(1:sim.n_iter) do _
-        noisy_data = deepcopy(data)
-        noisy_data.age .= noisy_data.age .+ randn(n) .* 0.5
-        Float64.(predict_mode(sim.model, noisy_data))
+
+
+function simulate(sim::ThreadedSimulation, X::DataFrame)
+    nthreads_active = Threads.nthreads()
+    if nthreads_active == 1
+        @warn "Only 1 thread available — falling back to serial BasicSimulation"
+        return simulate(BasicSimulation(sim.model, sim.n_iter, sim.noise_level), X)
     end
-    reduce(+, results) ./ sim.n_iter
-end
 
-# ----------------------------------------------------------
-# 👩‍⚕️ Patient Representation
-# ----------------------------------------------------------
+    @info "Running ThreadedSimulation on $nthreads_active threads..."
 
-struct PatientProfile
-    age::Float64
-    bmi::Float64
-    hypertension::Bool
-    diabetes::Bool
-end
+    num_cols = Symbol.(filter(c -> eltype(X[!, c]) <: Real, names(X)))
 
-function to_df(p::PatientProfile)
-    DataFrame(age=[p.age],
-              bmi=[p.bmi],
-              hypertension=[p.hypertension ? 1 : 0],
-              diabetes=[p.diabetes ? 1 : 0])
+    preds_per_thread = [zeros(nrow(X)) for _ in 1:nthreads_active]
+
+    Threads.@threads for rep in 1:sim.n_iter
+        tid = mod1(threadid(), nthreads_active)
+        X_noisy = add_noise(X, num_cols, sim.noise_level)
+        preds = predict_proba(sim.model, X_noisy)
+        preds_per_thread[tid] .+= preds
+    end
+
+    preds_total = reduce(+, preds_per_thread)
+    return preds_total ./ sim.n_iter
 end
