@@ -1,21 +1,16 @@
 using Distributed
 
-# === 0️⃣ WORKER SETUP ===
-# add worker processes if we're running single-threaded
 if nprocs() == 1
     addprocs(4)
 end
 
-# load the necessary packages on every worker
 @everywhere using MLJ, MLJBase, MLJDecisionTreeInterface, MLJLinearModels, DataFrames, Random, Statistics, CategoricalArrays
-# === 1️⃣ LOAD & PREPROCESS ===
+
 df = MonteCarloHealth.load_and_clean_data()
 
-# Drop irrelevant columns
 dropcols = [:patient_id, :blood_pressure]
 df = DataFrames.select(df, Not(dropcols))
 
-# Target and features
 target = :readmitted_30_days
 
 features = [
@@ -27,14 +22,11 @@ features = [
     :discharge_Home, :discharge_Nursing_Facility, :discharge_Rehab
 ]
 
-# Data subset for modeling
 df_model = DataFrames.select(df, [features; target])
 
-# Split X, y
 y, X = unpack(df_model, ==(:readmitted_30_days), rng=123)
 y = categorical(y)
 
-# === 2️⃣ FEATURE SUBSET TEST (RandomForest only) ===
 feature_sets = Dict(
     "all" => features,
     "clinical_only" => [:age, :diabetes, :hypertension, :length_of_stay],
@@ -59,7 +51,6 @@ best_row = subset_results[argmax(subset_results.Accuracy), :]
 best_features = feature_sets[best_row.SetName]
 println("\n✅ Best subset: $(best_row.SetName) with accuracy = $(round(best_row.Accuracy, digits=3))")
 
-# === 3️⃣ MODEL COMPARISON (on best subset only) ===
 
 @load LogisticClassifier pkg=MLJLinearModels
 @load DecisionTreeClassifier pkg=DecisionTree
@@ -86,8 +77,6 @@ end
 
 best_model_row = model_results[argmax(model_results.Accuracy), :]
 println("\n🏆 Best model: $(best_model_row.Model) with accuracy = $(round(best_model_row.Accuracy, digits=3))")
-
-# === 4️⃣ SUMMARY TABLES ===
 
 println("\n📊 Feature Subset Results:")
 println(subset_results)

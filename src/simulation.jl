@@ -1,7 +1,7 @@
 using DataFrames, Random, MLJ, Distributed, Statistics
 using Base.Threads
 
-# --- add_noise and predict_proba ---
+#miaou
 function add_noise(df::DataFrame, num_cols::Vector{Symbol}, σ::Float64)
     df_noisy = deepcopy(df)
     for c in num_cols
@@ -20,9 +20,6 @@ function predict_proba(mach::Machine, X::DataFrame)
     end
 end
 
-# ------------------------------------------------------------
-#  Simulation types
-# ------------------------------------------------------------
 abstract type Simulation end
 
 struct BasicSimulation <: Simulation
@@ -37,9 +34,6 @@ struct ThreadedSimulation <: Simulation
     noise_level::Float64
 end
 
-# ------------------------------------------------------------
-#  Serial simulate
-# ------------------------------------------------------------
 function simulate(sim::BasicSimulation, X::DataFrame)
     num_cols = Symbol.(names(X)[findall(c -> eltype(X[!, c]) <: Real, names(X))])
     preds = zeros(nrow(X))
@@ -50,19 +44,10 @@ function simulate(sim::BasicSimulation, X::DataFrame)
     return preds ./ sim.n_iter
 end
 
-# ------------------------------------------------------------
-#  Threaded simulate
-# ------------------------------------------------------------
-###############################################################
-#  Threaded Simulation — FINAL SAFE VERSION
-###############################################################
-
-
-
 function simulate(sim::ThreadedSimulation, X::DataFrame)
     nthreads_active = Threads.nthreads()
     if nthreads_active == 1
-        @warn "Only 1 thread available — falling back to serial BasicSimulation"
+        @warn "1 seul thread actif détecté. Utilisation de BasicSimulation à la place."
         return simulate(BasicSimulation(sim.model, sim.n_iter, sim.noise_level), X)
     end
 
