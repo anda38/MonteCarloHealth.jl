@@ -7,5 +7,5 @@ include("stat_des.jl")
 include("simulation.jl")
 include("visualisation.jl")
 export load_and_clean_data, basic_stats, simulate, plot_simulation_results, compare_simulations, 
-BasicSimulation, ParallelSimulation, Simulation,add_noise, predict_proba, _simulate_iteration, add_noise, ThreadedSimulation
+BasicSimulation, ParallelSimulation, Simulation, add_noise, predict_proba, _simulate_iteration, add_noise, ThreadedSimulation
 end

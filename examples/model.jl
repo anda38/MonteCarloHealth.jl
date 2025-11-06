@@ -1,10 +1,4 @@
-using Distributed
-
-if nprocs() == 1
-    addprocs(4)
-end
-
-@everywhere using MLJ, MLJBase, MLJDecisionTreeInterface, MLJLinearModels, DataFrames, Random, Statistics, CategoricalArrays
+using MLJ, MLJBase, MLJDecisionTreeInterface, MLJLinearModels, DataFrames, Random, Statistics, CategoricalArrays
 
 df = MonteCarloHealth.load_and_clean_data()
 
@@ -28,14 +22,14 @@ y, X = unpack(df_model, ==(:readmitted_30_days), rng=123)
 y = categorical(y)
 
 feature_sets = Dict(
-    "all" => features,
-    "clinical_only" => [:age, :diabetes, :hypertension, :length_of_stay],
-    "no_blood_pressure" => [:age, :cholesterol, :bmi, :diabetes, :hypertension, :length_of_stay],
+    "tout" => features,
+    "cliniques" => [:age, :diabetes, :hypertension, :length_of_stay],
+    "pas_blood_pressure" => [:age, :cholesterol, :bmi, :diabetes, :hypertension, :length_of_stay],
 )
 
 subset_results = DataFrame(SetName=String[], Accuracy=Float64[])
 
-println("\n=== PHASE 1: FEATURE SUBSET TEST ===")
+println("Test subsets")
 
 for (label, feats) in feature_sets
     X_subset = DataFrames.select(X, feats)
@@ -49,7 +43,7 @@ end
 
 best_row = subset_results[argmax(subset_results.Accuracy), :]
 best_features = feature_sets[best_row.SetName]
-println("\n✅ Best subset: $(best_row.SetName) with accuracy = $(round(best_row.Accuracy, digits=3))")
+println("Meilleur subset: $(best_row.SetName) avec fiabilité = $(round(best_row.Accuracy, digits=3))")
 
 
 @load LogisticClassifier pkg=MLJLinearModels
@@ -65,21 +59,15 @@ models = Dict(
 model_results = DataFrame(Model=String[], Accuracy=Float64[])
 
 X_best = DataFrames.select(X, best_features)
-println("\n=== PHASE 2: MODEL COMPARISON ===")
+println("Comparaison modèles")
 
 for (name, model) in models
     mach = machine(model, X_best, y)
     res = evaluate!(mach, resampling=CV(nfolds=5, shuffle=true), measure=accuracy, verbosity=0)
     acc = res.measurement[1]
     push!(model_results, (name, acc))
-    println("Model: $(name) → accuracy = $(round(acc, digits=3))")
+    println("Modèle: $(name) → fiabilité = $(round(acc, digits=3))")
 end
 
 best_model_row = model_results[argmax(model_results.Accuracy), :]
-println("\n🏆 Best model: $(best_model_row.Model) with accuracy = $(round(best_model_row.Accuracy, digits=3))")
-
-println("\n📊 Feature Subset Results:")
-println(subset_results)
-
-println("\n🤖 Model Comparison Results:")
-println(model_results)
+println("Meilleur modèle: $(best_model_row.Model) avec fiabilitié = $(round(best_model_row.Accuracy, digits=3))")

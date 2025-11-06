@@ -1,23 +1,15 @@
 using Statistics, DataFrames
 
-#describe_data(df::DataFrame)
-
-#Affiche un résumé simple du DataFrame :
-#- dimensions
-#- types des colonnes
-#- valeurs manquantes
-#- statistiques descriptives de base pour les variables numériques
-
 function description(df::DataFrame)
-    println("📊 Dimensions : $(nrow(df)) lignes × $(ncol(df)) colonnes")
+    println("Dimensions : $(nrow(df)) lignes × $(ncol(df)) colonnes")
     println("----------------------------------------------------")
 
-    println("\n📋 Types de colonnes :")
+    println(" Types de colonnes :")
     for (name, col) in zip(names(df), eachcol(df))
         println("• $(name): $(eltype(col))")
     end
 
-    println("\n⚠️ Valeurs manquantes :")
+    println(" Valeurs manquantes :")
     for (name, col) in zip(names(df), eachcol(df))
         nmiss = count(ismissing, col)
         if nmiss > 0
@@ -25,7 +17,7 @@ function description(df::DataFrame)
         end
     end
 
-    println("\n📈 Statistiques descriptives (variables numériques) :")
+    println("Statistiques descriptives (variables numériques) :")
     num_cols = [c for c in names(df) if eltype(df[!, c]) <: Number]
     if isempty(num_cols)
         println("Aucune variable numérique trouvée.")

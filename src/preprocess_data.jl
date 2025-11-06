@@ -30,6 +30,6 @@ function load_and_clean_data()
     end
     select!(df, Not(:discharge_destination))
 
-    println("✅ Cleaned data: $(nrow(df)) rows × $(ncol(df)) cols")
+    println("Données propres: $(nrow(df)) lignes × $(ncol(df)) colonnes")
     return df
 end
