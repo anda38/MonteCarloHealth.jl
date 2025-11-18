@@ -1,6 +1,6 @@
-using MLJ, MLJBase, MLJDecisionTreeInterface, MLJLinearModels, DataFrames, Random, Statistics, CategoricalArrays
+using MonteCarloHealth
 
-df = MonteCarloHealth.load_and_clean_data()
+df = load_and_clean_data()
 
 dropcols = [:patient_id, :blood_pressure]
 df = DataFrames.select(df, Not(dropcols))

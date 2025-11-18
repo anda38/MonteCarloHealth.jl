@@ -1,6 +1,3 @@
-using DataFrames, Random, MLJ, Statistics, StatsPlots
-using BenchmarkTools
-using MLJDecisionTreeInterface
 using MonteCarloHealth
 
 df = MonteCarloHealth.load_and_clean_data()
@@ -13,7 +10,6 @@ features = [
     :gender_Female, :gender_Male, :gender_Other,
     :discharge_Home, :discharge_Nursing_Facility, :discharge_Rehab
 ]
-
 y, X = unpack(df, ==(target), rng=123)
 y = categorical(y)
 
