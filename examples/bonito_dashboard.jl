@@ -84,7 +84,7 @@ on(bouton_run.value) do _
     preds[] = p_mean
     preds_matrix[] = p_mat
     redraw_curves!(p_mat)
-    @info "Simulation terminée ✅"
+    @info "Simulation terminée"
 end
 
 
