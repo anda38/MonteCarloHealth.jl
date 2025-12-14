@@ -5,9 +5,7 @@ using WGLMakie, BonitoBook
 using BonitoBook.Bonito
 using ColorSchemes, KernelDensity
 
-# ------------------------------------------------------------
-# Entraînement du modèle
-# ------------------------------------------------------------
+
 df = load_and_clean_data()
 target = :readmitted_30_days
 y, X = unpack(df, ==(target), rng=123)
@@ -16,9 +14,6 @@ y = categorical(y)
 model = RandomForestClassifier()
 mach = machine(model, X, y) |> fit!
 
-# ------------------------------------------------------------
-# Observables
-# ------------------------------------------------------------
 noise        = Observable(0.05)
 n_iter       = Observable(100)
 threaded     = Observable(true)
@@ -26,9 +21,7 @@ subset_size  = Observable(500)
 preds        = Observable(Float64[])
 preds_matrix = Observable(Matrix{Float64}(undef, 0, 0))
 
-# ------------------------------------------------------------
-# Simulation complète (retourne toutes les itérations)
-# ------------------------------------------------------------
+
 function run_all(; n_iter, noise, threaded, subset_size=500)
     Xsub = X[rand(1:nrow(X), min(subset_size, nrow(X))), :]
     num_cols = Symbol.(filter(c -> eltype(Xsub[!, c]) <: Real, names(Xsub)))
@@ -51,9 +44,7 @@ function run_all(; n_iter, noise, threaded, subset_size=500)
     return preds_mean, preds_mat
 end
 
-# ------------------------------------------------------------
-# Graphique (courbes uniquement)
-# ------------------------------------------------------------
+
 fig = Figure(size=(900, 400))
 ax = Axis(fig[1, 1], title="Distribution des itérations Monte Carlo",
     xlabel="Probabilité prédite (p(réadmission))", ylabel="Densité")
@@ -75,9 +66,7 @@ function redraw_curves!(M)
     ax.title = "Distribution des itérations Monte Carlo"
 end
 
-# ------------------------------------------------------------
-# Composants UI
-# ------------------------------------------------------------
+
 bouton_run      = Components.Button("Lancer la simulation")
 curseur_bruit   = Components.Slider(0.0:0.01:0.5; value=noise[])
 curseur_iter    = Components.Slider(5:5:500; value=n_iter[])
@@ -98,9 +87,7 @@ on(bouton_run.value) do _
     @info "Simulation terminée ✅"
 end
 
-# ------------------------------------------------------------
-# Tableau des statistiques — version moderne
-# ------------------------------------------------------------
+
 stats_df = lift(preds) do p
     if isempty(p)
         return DataFrame(mesure=["Moyenne","Écart-type","Minimum","Maximum"], valeur=[NaN,NaN,NaN,NaN])
@@ -134,13 +121,10 @@ stats_html = lift(stats_df) do df
     )
 end
 
-# ------------------------------------------------------------
-# Styles pastel
-# ------------------------------------------------------------
 app_style = Styles(
     "font-family" => "'Inter', system-ui, sans-serif",
     "font-weight" => "500",
-    "background-color" => "#FBE8ED",  # 💗 soft pink background
+    "background-color" => "#FBE8ED", 
     "padding" => "40px",
     "max-width" => "950px",
     "margin" => "auto"
@@ -157,12 +141,10 @@ carte_style = Styles(
 
 curseur_style = Styles(
     "margin-bottom" => "12px",
-    "accent-color" => "#B4E0C9"  # 🌿 mint pastel
+    "accent-color" => "#B4E0C9"
 )
 
-# ------------------------------------------------------------
-# Interface finale
-# ------------------------------------------------------------
+
 ui = DOM.div(
     DOM.h1("Simulateur de réadmission à l’hôpital",
         style=Styles("font-size" => "34px", "color" => "#1a1a1a", "font-weight" => "700", "margin-bottom" => "10px")
