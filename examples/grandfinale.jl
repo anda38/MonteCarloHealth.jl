@@ -1,6 +1,8 @@
 using MonteCarloHealth
+using MLJ, DataFrames, CategoricalArrays, Statistics, StatsPlots, Random, MLJDecisionTreeInterface
 
-df = MonteCarloHealth.load_and_clean_data()
+
+df = load_and_clean_data()
 
 target = :readmitted_30_days
 features = [
@@ -15,10 +17,9 @@ y = categorical(y)
 
 model = RandomForestClassifier()
 mach = machine(model, X, y) |> fit!
-#AA
 
-basic_sim    = BasicSimulation(mach, 10, 0.1)
-threaded_sim = ThreadedSimulation(mach, 500, 0.1)
+basic_sim    = BasicSimulation(mach, 200, 0.1)
+threaded_sim = ThreadedSimulation(mach, 200, 0.1)
 
 @info "ThreadedSimulation..."
 @time preds_threaded = simulate(threaded_sim, X)

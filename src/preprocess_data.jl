@@ -1,5 +1,3 @@
-using CSV, DataFrames
-
 function load_and_clean_data()
     
     path = joinpath(@__DIR__, "..", "data", "données.csv")

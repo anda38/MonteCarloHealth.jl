@@ -1,7 +1,3 @@
-using DataFrames, Random, MLJ, Distributed, Statistics
-using Base.Threads
-
-#miaou
 function add_noise(df::DataFrame, num_cols::Vector{Symbol}, σ::Float64)
     df_noisy = deepcopy(df)
     for c in num_cols

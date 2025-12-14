@@ -1,5 +1,3 @@
-using Statistics, DataFrames
-
 function description(df::DataFrame)
     println("Dimensions : $(nrow(df)) lignes × $(ncol(df)) colonnes")
     println("----------------------------------------------------")
