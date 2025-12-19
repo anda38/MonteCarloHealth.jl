@@ -11,32 +11,33 @@ target = :readmitted_30_days
 y, X = unpack(df, ==(target), rng=123)
 y = categorical(y)
 
+train, test = partition(eachindex(y), 0.8, shuffle=true, rng=123)
+X_eval = X[test, :]
+
 model = RandomForestClassifier()
-mach = machine(model, X, y) |> fit!
+mach = machine(model, X[train, :], y[train]) |> fit!
 
 noise        = Observable(0.05)
 n_iter       = Observable(100)
 threaded     = Observable(true)
-subset_size  = Observable(500)
 preds        = Observable(Float64[])
 preds_matrix = Observable(Matrix{Float64}(undef, 0, 0))
 
 
-function run_all(; n_iter, noise, threaded, subset_size=500)
-    Xsub = X[rand(1:nrow(X), min(subset_size, nrow(X))), :]
-    num_cols = Symbol.(filter(c -> eltype(Xsub[!, c]) <: Real, names(Xsub)))
-    n_rows = nrow(Xsub)
+function run_all(; n_iter, noise, threaded)
+    num_cols = Symbol.(filter(c -> eltype(X_eval[!, c]) <: Real, names(X_eval)))
+    n_rows = nrow(X_eval)
     preds_mat = zeros(n_iter, n_rows)
 
     if threaded
         @info "Simulation multi-thread sur $(Threads.nthreads()) threads..."
         Threads.@threads for i in 1:n_iter
-            X_noisy = MonteCarloHealth.add_noise(Xsub, num_cols, noise)
+            X_noisy = MonteCarloHealth.add_noise(X_eval, num_cols, noise)
             preds_mat[i, :] = MonteCarloHealth.predict_proba(mach, X_noisy)
         end
     else
         for i in 1:n_iter
-            X_noisy = MonteCarloHealth.add_noise(Xsub, num_cols, noise)
+            X_noisy = MonteCarloHealth.add_noise(X_eval, num_cols, noise)
             preds_mat[i, :] = MonteCarloHealth.predict_proba(mach, X_noisy)
         end
     end
@@ -69,18 +70,16 @@ end
 
 bouton_run      = Components.Button("Lancer la simulation")
 curseur_bruit   = Components.Slider(0.0:0.01:0.5; value=noise[])
-curseur_iter    = Components.Slider(5:5:500; value=n_iter[])
-curseur_subset  = Components.Slider(100:100:5000; value=subset_size[])
+curseur_iter    = Components.Slider(5:5:10_000; value=n_iter[])
 case_thread     = Components.Checkbox(threaded[])
 
 on(curseur_bruit.value)  do v; noise[] = v; end
 on(curseur_iter.value)   do v; n_iter[] = Int(v); end
-on(curseur_subset.value) do v; subset_size[] = Int(v); end
 on(case_thread.value)    do v; threaded[] = v; end
 
 on(bouton_run.value) do _
-    @info "Recalcul..." itérations=n_iter[] bruit=noise[] threads=threaded[] sous_échantillon=subset_size[]
-    p_mean, p_mat = run_all(n_iter=n_iter[], noise=noise[], threaded=threaded[], subset_size=subset_size[])
+    @info "Recalcul..." itérations=n_iter[] bruit=noise[] threads=threaded[]
+    p_mean, p_mat = run_all(n_iter=n_iter[], noise=noise[], threaded=threaded[])
     preds[] = p_mean
     preds_matrix[] = p_mat
     redraw_curves!(p_mat)
@@ -157,7 +156,6 @@ ui = DOM.div(
         DOM.h3("Paramètres de simulation", style=Styles("color" => "#1a1a1a", "font-weight" => "600")),
         DOM.div(DOM.p(lift(noise) do v "Bruit σ = $(round(v, digits=2))" end), curseur_bruit, style=curseur_style),
         DOM.div(DOM.p(lift(n_iter) do v "Itérations = $(v)" end), curseur_iter, style=curseur_style),
-        DOM.div(DOM.p(lift(subset_size) do v "Sous-échantillon = $(v)" end), curseur_subset, style=curseur_style),
         DOM.div("Multi-thread :", case_thread),
         DOM.div(bouton_run, style=Styles("margin-top" => "15px")),
         style=merge(carte_style, Styles("background-color" => "#B4E0C9"))

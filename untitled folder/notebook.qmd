@@ -1,0 +1,490 @@
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Projet MonteCarloHealth.jl</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #FBE8ED;
+  color: #1a1a1a;
+  margin: 0;
+  padding: 2rem;
+}
+
+.container {
+  max-width: 900px;
+  margin: auto;
+}
+
+h1, h2, h3 {
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+h1 {
+  font-size: 2.2rem;
+  margin-bottom: 0.5rem;
+}
+
+h3 {
+  margin-top: 2rem;
+  font-size: 1.3rem;
+}
+
+p {
+  font-size: 1rem;
+  color: #333;
+  line-height: 1.6;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(12px);
+  border-radius: 18px;
+  padding: 1.5rem 2rem;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+  margin-bottom: 2rem;
+  border-left: 6px solid #B4E0C9;
+}
+
+pre {
+  background: #ffffff;
+  border: 2px solid #B4E0C9;
+  border-radius: 12px;
+  padding: 1rem;
+  overflow-x: auto;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+code {
+  color: #2F4F4F;
+  font-weight: 500;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #d8d8d8;
+  margin: 2rem 0;
+}
+
+blockquote {
+  background: #EFD1D4;
+  border-left: 4px solid #C5BD96;
+  padding: 1rem;
+  border-radius: 10px;
+  font-style: italic;
+}
+
+footer {
+  text-align: center;
+  font-size: 0.9rem;
+  color: #555;
+  margin-top: 3rem;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>Projet MonteCarloHealth.jl</h1>
+<h3>Simulation Monte Carlo du risque de réadmission à l’hôpital</h3>
+<p><strong>Auteurs :</strong> Andalouse Bouhafs et Sarah Boukhari</p>
+
+<hr/>
+
+<div class="card">
+<h2> Fichier <code>simulation.jl</code></h2>
+
+<h3>1. Fonction d’ajout de bruit</h3>
+<pre><code class="language-julia">function add_noise(df::DataFrame, num_cols::Vector{Symbol}, σ::Float64, rng::AbstractRNG=Random.default_rng())
+    df_noisy = copy(df)                       
+    for c in num_cols                         
+        col = df[!, c]                        
+        df_noisy[!, c] = col .+ σ .* randn(rng, length(col))  
+    end
+    return df_noisy                           
+end
+</code></pre>
+
+<p>Cette fonction sert à ajouter du bruit aléatoire dans les colonnes numériques du jeu de données.
+L’idée, c’est de simuler de petites erreurs de mesure, comme si les valeurs observées (âge, cholestérol, tension, etc.) n’étaient pas parfaitement précises.
+Ce bruit permet de tester la stabilité du modèle : si le modèle change beaucoup dès qu’on perturbe un peu les données, c’est qu’il est sensible ou instable.</p>
+
+<p>Le paramètre σ représente l’intensité du bruit. Concrètement, à chaque valeur de la colonne, on ajoute un petit nombre aléatoire tiré d’une loi normale centrée réduite
+(moyenne = 0, écart-type = 1), multiplié par σ. On prend la colonne, et on ajoute à chaque valeur un bruit compris grosso modo entre -σ et +σ.</p>
+
+<p>En Julia, <code>randn()</code> tire des nombres aléatoires à partir d’un générateur global partagé. Le problème, c’est qu’en multi-threading, plusieurs threads appellent <code>randn()</code> 
+en même temps et se battent pour accéder au générateur.
+Julia doit verrouiller ce générateur pour éviter que deux threads écrivent en même temps dedans. Ce verrou bloque les autres threads, et le code tourne presque 
+aussi lentement qu’en séquentiel. Pour éviter ça, on a ajouté l'argument : <code>rng::AbstractRNG = Random.default_rng()</code>.
+Chaque thread peut maintenant recevoir son propre générateur aléatoire indépendant.</p>
+
+<h3>2. Fonction de prédiction</h3>
+<pre><code class="language-julia">function predict_proba(mach::Machine, X::DataFrame)
+    yhat = MLJ.predict(mach, X)               
+    if yhat isa AbstractVector{&lt;:UnivariateFinite}  
+        pos_class = last(levels(first(yhat)))       
+        return [pdf(y, pos_class) for y in yhat]    
+    else
+        return Float64.(yhat)                        
+    end
+end
+</code></pre>
+
+<p>La fonction <code>predict_proba</code> sert à récupérer les probabilités que le modèle MLJ prédit pour chaque patient. 
+Au début, on pensait que le modèle allait renvoyer simplement des 0 ou des 1, puisque la variable cible y était encodée 
+comme ça. Mais on a vite eu plusieurs erreurs à cause des types que MLJ attendait.</p>
+
+<p>Par exemple, il refusait de prédire sur un simple vecteur de Float64, ou plantait à cause de colonnes en String au lieu de Symbol.
+On a compris que Julia est très strict sur les types, donc il a fallu tout harmoniser : convertir les noms de colonnes en 
+symboles, garder les données dans un DataFrame, et limiter le bruit aux colonnes numériques.</p>
+
+<p>Le plus gros problème venait du fait que MLJ ne comprenait pas que la cible était une classification.
+Même si c’était des 0 et 1, il les voyait comme des valeurs continues. On a donc ajouté <code>y = categorical(y)</code> pour lui indiquer 
+clairement que c’était un problème de classes. Après ça, les prédictions n’étaient plus des 0 ou 1, mais des objets
+UnivariateFinite contenant les probabilités des deux classes. Par exemple : 0 → 0.27 et 1 → 0.73.
+Du coup, on a créé <code>predict_proba</code> pour extraire juste la probabilité de la classe positive (le “1”). Si le modèle 
+renvoie déjà des nombres, la fonction les convertit simplement en Float64. Grâce à ça, toutes les sorties sont uniformes et 
+prêtes à être utilisées dans la simulation, sans que le reste du code ait à gérer les types compliqués de MLJ.</p>
+
+<h3>3. Définition du système de simulation</h3>
+<pre><code class="language-julia">abstract type Simulation end
+struct BasicSimulation <: Simulation
+    model::Machine
+    n_iter::Int
+    noise_level::Float64
+end
+
+struct ThreadedSimulation <: Simulation
+    model::Machine
+    n_iter::Int
+    noise_level::Float64
+end
+</code></pre>
+
+<p>Ici, on a défini la base du système de simulation avec un type abstrait <code>Simulation</code> et deux structures concrètes : <code>BasicSimulation</code> et <code>ThreadedSimulation</code>.
+L’idée, c’était d’avoir deux versions du même simulateur : une version classique (en série) et une version optimisée avec plusieurs threads.
+Au début, on faisait tout dans une seule fonction, mais ça devenait vite confus entre le mode normal et le mode parallèle. En séparant les deux sous-types, 
+on peut appeler la même fonction <code>simulate()</code> plus tard, et Julia choisit automatiquement la bonne méthode grâce au multiple dispatch.
+Chaque structure contient le modèle MLJ déjà entraîné (<code>model</code>), le nombre d’itérations Monte Carlo (<code>n_iter</code>), et le niveau de bruit (<code>noise_level</code>).</p>
+
+<h3>4. Simulation multi-threadée</h3>
+<pre><code class="language-julia">function simulate(sim::ThreadedSimulation, X::DataFrame)
+    nthreads_active = Threads.nthreads()                                             
+    if nthreads_active == 1                                                          
+        @warn "1 seul thread actif détecté. Utilisation de BasicSimulation à la place."
+        return simulate(BasicSimulation(sim.model, sim.n_iter, sim.noise_level), X)  
+    end
+
+    @info "Simulation avec $nthreads_active threads"
+
+    num_cols = Symbol.(filter(c -> eltype(X[!, c]) &lt;: Real, names(X)))               
+    base_cols = [Float64.(X[!, c]) for c in num_cols]                                
+    n_rows = nrow(X)                                                                 
+    preds_per_thread = Vector{Vector{Float64}}(undef, nthreads_active)               
+    chunk = cld(sim.n_iter, nthreads_active)                                         
+    rngs = [MersenneTwister(0x1234 + tid) for tid in 1:nthreads_active]              
+
+    Threads.@threads for tid in 1:nthreads_active                                    
+        rng = rngs[tid]                                                              
+        local_preds = zeros(n_rows)                                                  
+        X_noisy = DataFrame(X)                                                       
+        for (idx, c) in enumerate(num_cols)                                          
+            X_noisy[!, c] = copy(base_cols[idx])                                     
+        end
+        noise_buf = zeros(n_rows)                                                    
+        start_iter = (tid - 1) * chunk + 1                                           
+        end_iter = min(tid * chunk, sim.n_iter)                                      
+        for _ in start_iter:end_iter                                                 
+            for (idx, c) in enumerate(num_cols)                                      
+                randn!(rng, noise_buf)                                               
+                noisy_col = X_noisy[!, c]                                            
+                base_col = base_cols[idx]                                            
+                @inbounds @. noisy_col = base_col + sim.noise_level * noise_buf      
+            end
+            local_preds .+= predict_proba(sim.model, X_noisy)                        
+        end
+        preds_per_thread[tid] = local_preds                                          
+    end
+
+    preds_total = reduce(+, preds_per_thread)                                        
+    return preds_total ./ sim.n_iter                                                 
+end
+</code></pre>
+
+<p>Cette fonction <code>simulate</code> est celle qui fait tourner la version de base (non-parallèle) du Monte Carlo.
+Au départ, elle servait surtout à valider la logique avant d’ajouter le multi-threading.
+
+La première ligne isole les colonnes numériques du jeu de données. On avait eu des erreurs avant à cause des colonnes catégorielles 
+que <code>randn!</code> ne supporte pas. Du coup, on les filtre avec <code>eltype(X[!, c]) &lt;: Real</code>, et on garde seulement celles qu’on peut bruiter.
+
+Ensuite, on prépare un <code>DataFrame X_noisy</code> qui est une copie réutilisable du jeu de données. C’est un détail important : au début, 
+on recréait un DataFrame complet à chaque itération et ça créait énormément d’allocations et ralentissait tout.  
+Là, on garde la même structure en mémoire et on remplace juste les colonnes numériques à chaque boucle.</p>
+<p>On utilise aussi un buffer <code>noise_buf</code> pour stocker le bruit généré par <code>randn!</code>.  
+Ça évite de réallouer un vecteur à chaque fois. Pareil pour <code>preds</code>, qui accumule les probabilités sur toutes les itérations.</p>
+
+<p>Dans la boucle principale, on génère du bruit avec <code>randn!</code>, qu’on multiplie par <code>sim.noise_level</code> (le σ défini avant).  
+Ce σ détermine l’amplitude du bruit : plus il est grand, plus les colonnes numériques sont perturbées.  
+Au final, à chaque itération, on prédit avec <code>predict_proba</code> et on ajoute les probabilités obtenues à <code>preds</code>.</p>
+
+<p>Une fois toutes les itérations finies, on fait la moyenne <code>preds ./ sim.n_iter</code>.  
+Ça donne, pour chaque patient, la probabilité moyenne de réadmission après avoir perturbé les données plusieurs fois.</p>
+</div>
+
+<div class="card">
+<h2>Fichier <code>grandfinale.jl</code></h2>
+
+<pre><code class="language-julia">df = load_and_clean_data()
+
+target = :readmitted_30_days
+features = [
+    :age, :cholesterol, :bmi, :diabetes, :hypertension,
+    :medication_count, :length_of_stay,
+    :blood_pressure_systolic, :blood_pressure_diastolic,
+    :gender_Female, :gender_Male, :gender_Other,
+    :discharge_Home, :discharge_Nursing_Facility, :discharge_Rehab
+]
+y, X = unpack(df, ==(target), rng=123)
+y = categorical(y)
+
+train, test = partition(eachindex(y), 0.8, shuffle=true, rng=123)
+
+model = RandomForestClassifier()
+mach = machine(model, X[train, :], y[train]) |> fit!
+
+basic_sim    = BasicSimulation(mach, 500, 0.1)
+threaded_sim = ThreadedSimulation(mach, 500, 0.1)
+
+@info "ThreadedSimulation..."
+@time preds_threaded = simulate(threaded_sim, X[test, :])
+
+@info "BasicSimulation..."
+@time preds_basic = simulate(basic_sim, X[test, :])
+</code></pre>
+
+<p>Ici, c’est la partie du code qui prépare et lance les simulations.  
+On commence par charger les données nettoyées avec <code>load_and_clean_data()</code>, puis on définit les variables qu’on veut garder dans la modélisation.  
+La cible <code>:readmitted_30_days</code> indique si le patient a été réadmis ou non dans les 30 jours, et toutes les autres colonnes servent de variables explicatives.</p>
+
+<p>Ensuite, on utilise <code>unpack()</code> de MLJ pour séparer X (les variables explicatives) et y (la variable cible).  
+On convertit y en variable catégorielle avec <code>categorical(y)</code>, parce qu’on avait eu beaucoup d’erreurs au début avec MLJ : le modèle refusait de prédire  
+quand la variable cible était encore en Float64.</p>
+
+<p>On découpe ensuite les données en deux parties : 80 % pour l’entraînement et 20 % pour le test, avec <code>partition()</code>.  
+Avant, on faisait les simulations sur tout le dataset, mais ça prenait beaucoup trop de temps et ne permettait pas de vérifier la généralisation du modèle.</p>
+
+<p>On crée ensuite un <code>RandomForestClassifier()</code> de MLJ, et on l’entraîne avec <code>fit!</code> sur l’échantillon d’apprentissage.  
+C’est ce modèle entraîné (<code>mach</code>) qu’on passe ensuite à nos deux simulateurs.</p>
+
+<p>Les lignes avec <code>@info</code> et <code>@time</code> permettent d’afficher les logs et le temps d’exécution pour comparer les performances des deux versions.  
+Au début, on espérait que la version multithread soit beaucoup plus rapide, mais on a remarqué que ce n’était pas toujours le cas.  
+Concrètement, elle est plus rapide que la version basique, mais reste lente quand le nombre d’itérations augmente, ce qui est l’inverse de ce qu’on imaginait au départ.</p>
+
+<p>Quand on a testé la simulation avec plus d’itérations, on a remarqué que le temps total augmentait presque proportionnellement au nombre d’itérations, même 
+avec plusieurs threads. Par exemple avec 8 threads et 500 itérations, on obtient environ 16 secondes, avec 8 threads et 5000 itérations, ça monte à 123 secondes, soit 
+environ 10 fois plus long, exactement comme le nombre d’itérations.  
+Le threading accélère chaque itération (les threads se partagent le travail), mais il ne rend pas le programme magique.</p>
+
+<p>Pareil avec 4 threads :  
+500 itérations = 18,8 secondes, 5000 itérations = 211 secondes,  
+soit encore environ ×11 plus long.  
+Le temps par itération baisse, mais le temps total augmente proportionnellement à la charge de travail.</p>
+
+<p>On finit par ajouter un tableau de statistiques, les moyennes et écarts-types des prédictions pour chaque méthode, afin de vérifier que les deux approches donnent des résultats similaires.</p>
+
+<h3>Test des modèles initiaux</h3>
+
+<p>Au tout début du projet, on avait créé un petit script à part <code>model.jl</code> pour tester différents modèles et jeux de variables.  
+Le but était juste de voir quel modèle de MLJ donnait les meilleurs résultats sur nos données (réadmission à 30 jours).  
+On a comparé plusieurs sous-ensembles de variables (par exemple seulement les variables cliniques, ou toutes sauf la tension artérielle), et trois modèles : régression logistique, arbre de décision et forêt aléatoire.</p>
+
+<p>Le script utilisait <code>evaluate!</code> avec une validation croisée à 5 plis pour mesurer la précision (<code>accuracy</code>).  
+Le meilleur modèle était la forêt aléatoire (<code>RandomForestClassifier</code>), avec les variables “complètes”.  
+C’est celui qu’on a gardé pour toutes les simulations ensuite.  
+On n’a plus retouché ce fichier après cette étape : il servait surtout à choisir le modèle de base avant de passer à la partie simulation Monte Carlo.</p>
+</div>
+
+<div class="card">
+<h3>Interface graphique et réactivité</h3>
+<pre><code class="language-julia">noise        = Observable(0.05)
+n_iter       = Observable(100)
+threaded     = Observable(true)
+preds        = Observable(Float64[])
+preds_matrix = Observable(Matrix{Float64}(undef, 0, 0))
+</code></pre>
+
+<p>Ici, on définit les valeurs initiales utilisées par le simulateur.  
+Ce ne sont pas des valeurs “fixées”, mais plutôt des valeurs de départ pour l’interface graphique.  
+Par exemple : <code>noise = Observable(0.05)</code> initialise le niveau de bruit à 0.05 au lancement de l’application.  
+<code>preds</code> et <code>preds_matrix</code> servent à stocker les résultats des simulations (respectivement les moyennes et toutes les itérations).</p>
+
+<p>Le mot-clé <code>Observable</code> veut dire que ces valeurs sont réactives : elles changent automatiquement quand l’utilisateur déplace un curseur ou clique sur un bouton dans l’interface Bonito.  
+Ça permet à Julia de relancer le calcul avec les nouvelles valeurs sans qu’on ait besoin de redéfinir tout le code.</p>
+
+<h3>Fonction principale</h3>
+<pre><code class="language-julia">function run_all(; n_iter, noise, threaded)
+    num_cols = Symbol.(filter(c -> eltype(X_eval[!, c]) &lt;: Real, names(X_eval)))
+    n_rows = nrow(X_eval)
+    preds_mat = zeros(n_iter, n_rows)
+    ...
+    return preds_mean, preds_mat
+end
+</code></pre>
+
+<p>Cette fonction <code>run_all()</code> est celle qui lance les simulations de Monte Carlo.  
+Elle prend trois paramètres : le nombre d’itérations (<code>n_iter</code>), le niveau de bruit (<code>noise</code>) et si le calcul doit être fait en multi-thread (<code>threaded</code>).  
+D’abord, on récupère uniquement les colonnes numériques de <code>X_eval</code>, parce que c’est sur elles qu’on peut ajouter du bruit.  
+On crée ensuite une matrice vide <code>preds_mat</code> qui va stocker toutes les prédictions de chaque itération (une ligne par itération).</p>
+
+<p>Si le mode multi-thread est activé, la boucle des itérations est répartie entre plusieurs cœurs avec <code>Threads.@threads</code>.  
+Sinon, la boucle est faite normalement, sur un seul cœur.  
+À chaque itération, on ajoute du bruit gaussien sur les colonnes numériques avec <code>add_noise()</code> et on fait une prédiction avec <code>predict_proba()</code> pour obtenir la probabilité de réadmission.  
+On enregistre les résultats dans la matrice <code>preds_mat</code>.  
+À la fin, on calcule la moyenne de toutes les itérations (<code>preds_mean</code>), ce qui donne la probabilité moyenne par patient.</p>
+
+<p>La fonction retourne à la fois cette moyenne et la matrice complète de toutes les simulations, ce qui permet d’afficher soit une courbe moyenne, soit la distribution complète dans le tableau de bord.</p>
+
+<h3>Visualisation avec Makie</h3>
+<pre><code class="language-julia">fig = Figure(size=(900, 400))
+ax = Axis(fig[1, 1], title="Distribution des itérations Monte Carlo",
+xlabel="Probabilité prédite (p(réadmission))", ylabel="Densité")
+...
+</code></pre>
+
+<p>Ce bloc gère l’affichage des résultats sous forme de courbes.  
+On commence par créer une figure avec Makie (<code>Figure</code> et <code>Axis</code>), où l’axe des x représente les probabilités prédites de réadmission,
+et l’axe des y la densité (autrement dit, la forme de la distribution des prédictions).</p>
+
+<p>La fonction <code>redraw_curves!()</code> sert à mettre à jour le graphique à chaque nouvelle simulation.  
+Elle prend la matrice <code>M</code> (toutes les itérations) et vide le graphique précédent (<code>empty!(ax)</code>), choisit une palette 
+de couleurs (<code>ColorSchemes.viridis</code>) pour que chaque itération ait une teinte différente, calcule la densité de probabilité pour chaque itération à l’aide de <code>KernelDensity.kde</code> (courbes lissées au lieu d’un histogramme) et trace toutes les courbes une par une avec <code>lines!()</code>.</p>
+
+<p>L’effet visuel final est un ensemble de courbes translucides, chacune représentant une simulation différente.  
+Quand elles se superposent fortement, ça montre que le modèle est stable ; quand elles s’éparpillent, ça veut dire qu’il est plus sensible au bruit.</p>
+
+<div class="card">
+<h3>Interface interactive (Bonito)</h3>
+<pre><code class="language-julia">bouton_run      = Components.Button("Lancer la simulation")
+curseur_bruit   = Components.Slider(0.0:0.01:0.5; value=noise[])
+curseur_iter    = Components.Slider(5:5:10_000; value=n_iter[])
+case_thread     = Components.Checkbox(threaded[])
+
+on(curseur_bruit.value)  do v; noise[] = v; end
+on(curseur_iter.value)   do v; n_iter[] = Int(v); end
+on(case_thread.value)    do v; threaded[] = v; end
+
+on(bouton_run.value) do _
+    @info "Recalcul..." itérations=n_iter[] bruit=noise[] threads=threaded[]
+    p_mean, p_mat = run_all(n_iter=n_iter[], noise=noise[], threaded=threaded[])
+    preds[] = p_mean
+    preds_matrix[] = p_mat
+    redraw_curves!(p_mat)
+    @info "Simulation terminée"
+end
+</code></pre>
+
+<p>Ce bloc gère l’interactivité du tableau de bord.  
+On crée les différents éléments avec Bonito : un bouton “Lancer la simulation” pour exécuter le calcul, deux curseurs pour régler le bruit et le nombre d’itérations, et une case à cocher pour activer ou désactiver le multi-threading.</p>
+
+<p>Chaque élément est lié à une variable <code>Observable</code>, ce qui permet de réagir automatiquement aux actions de l’utilisateur.  
+Les blocs <code>on(...)</code> écoutent ces changements et mettent à jour les observables.  
+Quand on clique sur “Lancer la simulation”, le code affiche un message d’info, appelle <code>run_all()</code> avec les paramètres choisis, met à jour les résultats (<code>preds</code>, <code>preds_matrix</code>), redessine les courbes avec <code>redraw_curves!()</code> et affiche “Simulation terminée”.</p>
+</div>
+
+<div class="card">
+<h3>Statistiques descriptives</h3>
+<pre><code class="language-julia">stats_df = lift(preds) do p
+    if isempty(p)
+        return DataFrame(mesure=["Moyenne","Écart-type","Minimum","Maximum"], valeur=[NaN,NaN,NaN,NaN])
+    end
+    DataFrame(
+        mesure=["Moyenne", "Écart-type", "Minimum", "Maximum"],
+        valeur=[mean(p), std(p), minimum(p), maximum(p)]
+    )
+end
+</code></pre>
+
+<p>Ce bloc calcule les statistiques de base de la simulation.  
+La fonction <code>lift()</code> réagit automatiquement quand la variable <code>preds</code> change : dès qu’une nouvelle simulation est terminée, le tableau se met à jour avec la moyenne, l’écart-type, le minimum et le maximum.</p>
+
+<p>Enfin, la partie de style assemble toute l’interface :  
+<code>stats_html</code> transforme ces statistiques en table HTML esthétique, et les variables de style (<code>app_style</code>, <code>carte_style</code>, <code>curseur_style</code>) définissent le thème pastel : fond rose clair, accents vert menthe, coins arrondis et effet de verre dépoli.  
+Le bloc <code>ui</code> regroupe tout : titre, paramètres, stats et graphique dans des cartes distinctes pour une présentation moderne et claire.</p>
+</div>
+
+<div class="card">
+<h2>Débogage et apprentissages</h2>
+
+<p>Au début, on a voulu paralléliser les simulations avec le module <code>Distributed</code>, mais c’était un enfer.  
+À chaque exécution, une erreur apparaissait : <em>“UndefVarError: #_simulate_iteration_remote not defined in Main”</em>.  
+On a découvert que dans Julia, chaque “worker” est indépendant : il ne partage ni variables ni fonctions avec le processus principal.  
+Il fallait donc déclarer chaque fonction sur tous les workers avec <code>@everywhere</code>.  
+Même après ça, le code restait très lent, car chaque worker devait recevoir une copie complète du modèle MLJ et du DataFrame, ce qui demandait beaucoup de mémoire et de temps.</p>
+
+<p>Un autre problème : à chaque relance du script, Julia ajoutait de nouveaux processus sans supprimer les anciens.  
+On se retrouvait vite avec des “workers zombies” (worker 10, 11, 12…).  
+On a compris qu’il fallait les nettoyer manuellement avec <code>rmprocs(workers())</code> avant d’en rajouter.  
+L’API <code>Distributed</code> garde les processus actifs entre les exécutions : pas pratique pour des tests rapides.</p>
+
+<p>Finalement, on a abandonné <code>Distributed</code> pour passer à <code>Threads.@threads</code>.  
+Les threads partagent la même mémoire, donc plus besoin de copier les données ou le modèle.  
+On a réécrit la boucle de simulation pour qu’elle tourne en parallèle : les résultats étaient identiques à la version simple (différence < 0.001), mais 3 à 5 fois plus rapides.  
+Le code est aussi devenu plus clair.  
+On a compris que <code>Threads</code> était parfait pour les tâches Monte Carlo, tandis que <code>Distributed</code> convient mieux à des calculs sur plusieurs machines.</p>
+
+<p>Même avec les threads, il y a eu des soucis : au début, plusieurs threads écrivaient dans le même tableau, causant des <em>race conditions</em> (valeurs écrasées ou doublées).  
+On a corrigé ça en créant un tampon (<em>buffer</em>) par thread, pour écrire dans des zones mémoire séparées puis combiner les résultats à la fin.</p>
+
+<p>Il y a eu aussi beaucoup d’erreurs de typage liées à <code>DataFrame</code>.  
+Par exemple : “no method matching add_noise(::DataFrame, ::Vector{String}, ::Float64)”.  
+C’était parce qu’on utilisait des noms de colonnes en <code>String</code> au lieu de <code>Symbol</code>, et que MLJ attendait un format strict.  
+En plus, certaines colonnes passaient automatiquement d’<code>Int64</code> à <code>Float64</code> après ajout de bruit, ce qui faisait planter le modèle.  
+On a corrigé en convertissant les noms avec <code>Symbol.(names(X))</code> et en limitant <code>add_noise</code> aux colonnes numériques.</p>
+
+<p>Concernant la cible <code>y</code>, on a compris qu’elle devait absolument être catégorielle.  
+Au début, on la laissait en <code>Float64</code>, ce qui faisait planter <code>RandomForestClassifier</code>.  
+MLJ utilise des <em>scientific types</em> (comme <code>Continuous</code> ou <code>Multiclass</code>), pas juste les types Julia.  
+On a donc ajouté <code>y = categorical(y)</code> : le modèle a enfin compris qu’il s’agissait d’un problème de classification.</p>
+
+<p>En parallèle, on a rencontré des erreurs de type <code>BoundsError</code> dans les boucles multi-threads : parfois, un thread accédait à un index inexistant (ex. [5] dans un tableau de 4).  
+C’était dû au nombre de threads actifs qui peut varier selon l’environnement.  
+On a sécurisé l’accès avec <code>mod1(threadid(), length(preds_per_thread))</code> pour éviter les débordements.</p>
+
+<p>Une autre erreur fréquente concernait le <em>world-age</em>.  
+Quand on modifiait le module et qu’on le rechargeait avec <code>include()</code>, Julia refusait parfois d’utiliser les nouvelles définitions.  
+On a découvert que Julia garde plusieurs versions compilées des fonctions, et qu’il faut redémarrer le REPL pour tout rafraîchir proprement.</p>
+
+<p>Un autre point technique était la gestion du hasard (<code>RNG</code>).  
+Au départ, chaque thread utilisait le même générateur global, ce qui créait des blocages et des résultats incohérents.  
+On a donc ajouté un argument <code>rng::AbstractRNG</code> à <code>add_noise</code> pour donner un générateur indépendant à chaque thread.  
+Les simulations sont devenues plus stables et reproductibles.  
+On a aussi fixé une graine (<code>rng = 123</code>) pour garder des résultats identiques entre exécutions.</p>
+
+<p>Côté performance, on a appris que même si les threads accélèrent le calcul, ils ne suppriment pas tous les goulots.  
+Par exemple, on a eu des problèmes de <em>false sharing</em> : quand deux threads écrivent dans des zones mémoire voisines, ils se ralentissent mutuellement.  
+On a corrigé ça en isolant la mémoire de chaque thread.  
+On a aussi constaté que Julia ne protège pas totalement les allocations : le ramasse-miettes (GC) peut se déclencher pendant le calcul et tout bloquer brièvement.  
+Pour éviter ça, on a réduit les allocations dans les boucles critiques et réutilisé les mêmes tableaux à chaque itération.</p>
+
+<p>Toutes ces erreurs nous ont forcés à comprendre Julia en profondeur :  
+la différence entre mémoire partagée et distribuée, la gestion des threads, le typage strict, les allocations et même la logique interne du compilateur.  
+Au final, même si le débogage a pris du temps, c’est ce qui nous a le plus appris : comprendre pourquoi ça plante, et comment Julia gère tout “sous le capot”.</p>
+
+<h3>Disclaimer</h3>
+<p>Ce document a été rédigé avec l’aide d’outils d’intelligence artificielle afin d’accélérer la mise en forme et la rédaction, mais il s’appuie entièrement sur les notes, expérimentations et débogages réalisés tout au long du semestre lors du développement du projet MonteCarloHealth.jl.
+L’IA a surtout été utilisée pour nous aider à reformuler certaines sections techniques et structurer la documentation du code, notamment pour la création du tableau de bord interactif avec BonitoBook, dont la documentation en ligne est très limitée.
+Pour la partie implémentation, nous nous sommes appuyées sur nos essais personnels, les échanges sur Stack Overflow, ainsi que sur quelques dépôts GitHub utilisant les mêmes bibliothèques (MLJ, Makie, Bonito, etc.) afin de comprendre comment les intégrer efficacement.</p>
+</div>
+
+<footer>
+<p>Projet MonteCarloHealth.jl</p>
+</footer>
+
+</div>
+</body>
+</html>
