@@ -1,8 +1,7 @@
 using MonteCarloHealth
 using DataFrames, MLJ, MLJDecisionTreeInterface, CategoricalArrays
-using Statistics
+using Statistics, Bonito
 using WGLMakie, BonitoBook
-using BonitoBook.Bonito
 using ColorSchemes, KernelDensity
 
 
