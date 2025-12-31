@@ -95,6 +95,50 @@ footer {
 <p><strong>Auteurs :</strong> Andalouse Bouhafs et Sarah Boukhari</p>
 
 <hr/>
+<div class="card">
+  <h2>Introduction</h2>
+
+  <p>
+    Les réadmissions à l’hôpital dans les 30 jours suivant une sortie représentent un enjeu important
+    pour les systèmes de santé. Elles sont souvent le signe de complications, de traitements mal
+    ajustés ou d’un suivi insuffisant après l’hospitalisation, et elles génèrent des coûts élevés
+    pour les hôpitaux. Anticiper ces réadmissions permettrait donc d’améliorer la prise en charge
+    des patients tout en réduisant les dépenses évitables.
+  </p>
+
+  <p>
+    Dans ce projet, nous nous appuyons sur un jeu de données synthétique issu de Kaggle,
+    <strong>Hospital Readmission Prediction</strong>, qui simule des dossiers de patients hospitalisés.
+    Le dataset contient environ 30 000 patients et regroupe des variables cliniques et
+    démographiques comme l’âge, le cholestérol, l’IMC, la présence de maladies chroniques
+    (diabète, hypertension), la durée du séjour ou encore le nombre de médicaments prescrits.
+    La variable cible indique si un patient a été réadmis ou non dans les 30 jours après sa sortie.
+  </p>
+
+  <p>
+    L’objectif du projet n’est pas seulement de prédire la réadmission à l’aide d’un modèle de
+    machine learning, mais surtout d’évaluer la stabilité de ces prédictions. En pratique,
+    les données médicales ne sont jamais parfaitement exactes : elles contiennent du bruit,
+    des erreurs de mesure ou des variations mineures. Pour tenir compte de cette incertitude,
+    nous utilisons une approche de simulation Monte Carlo, qui consiste à ajouter du bruit
+    aléatoire aux variables numériques et à observer comment les prédictions du modèle évoluent.
+  </p>
+
+  <p>
+    Le projet <strong>MonteCarloHealth.jl</strong> combine donc trois éléments principaux :
+  </p>
+
+  <ul>
+    <li>un modèle de classification entraîné avec la librairie MLJ</li>
+    <li>une simulation Monte Carlo pour tester la robustesse des prédictions face au bruit</li>
+    <li>une implémentation optimisée avec multi-threading et interface interactive</li>
+  </ul>
+
+  <p>
+    Les sections suivantes détaillent les choix techniques, les fonctions clés du code et les
+    principaux enseignements tirés de l’implémentation et du débogage du projet.
+  </p>
+</div>
 
 <div class="card">
 <h2> Fichier <code>simulation.jl</code></h2>
